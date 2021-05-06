@@ -1,0 +1,748 @@
+---
+title: "Western Carolina University - Speech Pathology program - Demographic Analysis"
+author: "Ahmed Hussin, PhD"
+date: "`r format(Sys.time(), '%Y-%m-%d')` "
+output:
+  html_document:
+    highlight: tango
+    keep_md: yes
+    number_sections: yes
+    theme: united
+    toc: yes
+    toc_float: yes
+    fig_width: 6
+    fig_height: 5
+    fig_caption: yes
+  pdf_document:
+    toc: yes
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  eval = TRUE,
+  warning = FALSE,
+  error = FALSE,
+  auotdep = TRUE,
+  include = FALSE,
+  cache = TRUE,
+  tidy = TRUE,
+  options(scipen=999)
+  )
+```
+
+```{r}
+#load all the necessary packages 
+library(psych)
+library(car)
+library(carData)
+library(effectsize)
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(kableExtra)
+library(mosaic)
+library(tidyverse)
+library(visdat)
+library(arsenal)
+library(table1)
+library(corrplot)
+library(jtools)
+library(stargazer)
+library(nortest)
+library(RColorBrewer)
+library(plotly)
+library(readxl)
+library(data.table)
+library(flextable)
+library(magrittr)
+library(formattable)
+```
+
+
+```{r}
+#loading in all your functions
+source("../functions/descriptiveFunctions.r", echo=FALSE)
+source("../functions/scoreDistr_bygroup.r", echo=FALSE)
+source("../functions/cohensd_plots.r", echo = FALSE)
+source("../functions/demo_interaction.r", echo=FALSE)
+
+```
+
+```{r echo=FALSE}
+
+# Loading in dataset
+fileLoc = "/Users/athussin/Documents/GitHub/WesternCarolina-Speech-demographic" # local repository folder. change accordingly
+filename1 = "wcu-speech.csv" # name of data file to load. this particular script works with csv files downloaded from looker/demographic look. (See my folder on Looker for an example)
+
+#loading data set that contains applicants who applied to this specific program and everyone else in the cohort
+filename2 = "ushs2.csv" # name of data file to load. this particular script works with csv files downloaded from
+
+df = read.csv(paste(fileLoc, filename1, sep="/"), header = TRUE,na.strings = c("-", "", "NA", "N/A"))
+df = df[!duplicated(df[,c('Reservation.ID', 'Z.Score')]),] 
+
+
+#factoring select variables
+df$Gender <- as.factor(df$Gender)
+df$Age <- as.factor(df$Age)
+df$Application.Cycle.Year <- as.factor(df$Application.Cycle.Year )
+df$Community.Size <- as.factor(df$Community.Size )
+df$Domestic.or.International <- as.factor(df$Domestic.or.International)
+df$Gross.Income <- as.factor(df$Gross.Income)
+df$Highest.Education.Parents <- as.factor(df$Highest.Education.Parents)
+df$Home.Language <- as.factor(df$Home.Language)
+df$Race <- as.factor(df$Race)
+df$Work.Experience <- as.factor(df$Work.Experience)
+df$Highest.Education.Self <- as.factor(df$Highest.Education.Self)
+
+
+##########################
+##########################
+##########################
+########################## Missing data
+##########################
+##########################
+##########################
+
+  # isolate rows of people who did not participate in exit survey (indicated by "Not Answered" in gender, race, language and who 
+  # also have na in community size, gross income and parent's edu)
+df$blank <- df$Gender=="Not Answered" & df$Race=="Not Answered" & df$Home.Language=="Not Answered" &
+  is.na(df$Community.Size) & is.na(df$Gross.Income) & is.na(df$Highest.Education.Parents) &
+  is.na(df$Work.Experience)
+
+df_missing <- df[df$blank=="TRUE",] # applicants who did not participate in exit survey
+
+# percent applicants who did not complete survey:
+pct_fill_survey = 100 - nrow(df_missing)/nrow(df)*100
+
+# isolate only data from filled survey
+df <- df[df$blank=="FALSE",] # applicants who did
+
+# prop of unfilled survey items by participants who completed survey:
+vars_vis_miss <- c("Z.Score", "Gender", "Age", "Application.Cycle.Year","Community.Size",
+                   "Domestic.or.International","Gross.Income","Highest.Education.Parents",
+                   "Home.Language","Race","Work.Experience")
+vars_vis_miss <- df[vars_vis_miss]
+vis_miss(vars_vis_miss)
+
+# Report on variables with most missing data:
+miss_p <- sapply(vars_vis_miss,function(x) {sum(is.na(x))/length(x)*100})
+var_miss <- round(miss_p, 2)
+
+
+##########################
+##########################
+##########################
+############################ Descriptive Summary
+##########################
+##########################
+##########################
+
+# Reorder demographic levels based on program sample:
+
+## Race
+# df$Race <- dplyr::recode(df$Race, "Indigenous" = "Other")
+# df$Race <- dplyr::recode(df$Race, "Mixed" = "Other")
+# df$Race <- dplyr::recode(df$Race, "Middle Eastern or Northern African" = "Other")
+# df$Race <- dplyr::recode(df$Race, "Hispanic, Latino, or Spanish origin" = "Other")
+# df$Race <- dplyr::recode(df$Race, "Black or African American" = "Other")
+# df$Race <- dplyr::recode(df$Race, "Asian" = "Other")
+table1::label(df$Race) <- "Race"
+
+## gender 
+# df$Gender[df$Gender == "Non-binary"] <- "Other"
+df$Gender<-ordered(df$Gender, levels = c("Female", "Male", "Non-binary"))
+
+## age
+df$Age<-ordered(df$Age, levels = c("Under 20", "20-22", "23-25", "26-28", "Over 28"))
+table1::label(df$Age) <- "Age"
+
+## community size
+# df$Community.Size <- dplyr::recode(df$Community.Size, "Remote/isolated" = "Rural")
+df$Community.Size<-ordered(df$Community.Size, levels = c("Rural", "Small town/city","Medium town/city", "Large town/city", "Major urban center"))
+table1::label(df$Community.Size) <- "Community Size"
+
+## Recode gross income
+df$Gross.Income <- dplyr::recode(df$Gross.Income, "$0" = "Other", 
+                                 "$200,000 to $249,999" = "$200,000 and above",
+                                 "$250,000 to $299,999" = "$200,000 and above",
+                                 "$300,000 to $399,999" = "$200,000 and above",
+                                 "$400,000 to $499,999" = "$200,000 and above", 
+                                 "$500,000 or more" = "$200,000 and above")
+table1::label(df$Gross.Income) <- "Gross Income"
+df$Gross.Income<-ordered(df$Gross.Income, levels = c("Less than $25,000", "$25,000 to $49,999", "$50,000 to $74,999", "$75,000 to $99,999", "$100,000 to $149,999", "$150,000 to $199,999", "$200,000 and above"))
+
+## highest education parents
+df$Highest.Education.Parents<-ordered(df$Highest.Education.Parents, levels = c("None", 
+                                                                               "High school degree or equivalent (e.g. GED)",
+                                                                               "Some college, no degree", 
+                                                                               "Associate degree (e.g. AA, AS)", 
+                                                                               "Bachelor’s degree (e.g. BA, BS)",
+                                                                               "Master’s degree (e.g. MA, MS, MEd)",
+                                                                               "Professional degree (e.g. MD, DDS, DVM)",
+                                                                               "Doctorate (e.g. PhD, EdD)"))
+table1::label(df$Highest.Education.Parents) <- "Highest Education of Parents"
+
+# ## Home language
+# df$Home.Language <- dplyr::recode(df$Home.Language, "Spanish" = "Other")
+df$Home.Language <- dplyr::recode(df$Home.Language, "French" = "Other")
+# df$Home.Language <- ordered(df$Home.Language, levels=c("English","Other"))
+table1::label(df$Home.Language) <- "Language Spoken at Home"
+
+## Number of program distributions:
+distcat <- "1"
+distcat[df$Number.of.Distributions==1] <- "1"
+distcat[1<df$Number.of.Distributions & df$Number.of.Distributions<=5] <- "2-5"
+distcat[5<df$Number.of.Distributions] <- " Over 5"
+
+df$Distributions = distcat
+df$Distributions <- as.factor(df$Distributions)
+df$Distributions<-ordered(df$Distributions, levels = c("1", "2-5", "Over 5"))
+
+## work experience
+df$Work.Experience<-ordered(df$Work.Experience, levels = c("NA", "None", "Under 1 year", "1-2 years", "3-5 years", "6-10 years", "11-15 years", "16-20 years", "Over 20 years"))
+table1::label(df$Work.Experience) <- "Work Experience"
+
+## highest education parents
+df$Highest.Education.Self<-ordered(df$Highest.Education.Self, levels = c("None", 
+                                                                               "High school degree or equivalent (e.g. GED)",
+                                                                               "Some college, no degree", 
+                                                                               "Associate degree (e.g. AA, AS)", 
+                                                                               "Bachelor’s degree (e.g. BA, BS)",
+                                                                               "Master’s degree (e.g. MA, MS, MEd)",
+                                                                               "Professional degree (e.g. MD, DDS, DVM)",
+                                                                               "Doctorate (e.g. PhD, EdD)"))
+table1::label(df$Highest.Education.Self) <- "Highest Education"
+
+########################## Create summary table:
+tab1 <- table1::table1( ~ Race + Gender + Age + Home.Language + Community.Size + Gross.Income + Highest.Education.Self + Highest.Education.Parents + Work.Experience + Work.Experience + Employment.Before.18, data=df, overall="Total")
+
+```
+
+# Background   
+The following analysis examined demographic differences in Casper score, focusing on the following variables:
+
+  + Race   
+  + Gender   
+  + Age   
+  + Language spoken at home
+  + Community size   
+  + Household income level   
+  + Highest Education 
+  + Highest Education of Parents
+  + Work Experience
+  + Employment before 18
+  + Applicants to current program compared to applicants to other programs
+
+[Subgroups with less than 5 applicants have been excluded from the following analysis]
+
+# Results
+
+## Cohort 
+```{r echo=FALSE, include=TRUE}
+tab1
+```
+
+## Race               
+Survey question: **How do you self-identify?**
+
+```{r echo=FALSE, include=FALSE, message=FALSE}
+race <- distribution_by_var3(df, "Race", "Z.Score")
+  show_text <- ifelse(race$stat.anova[[1]][1,"Pr(>F)"]<0.05, "TRUE", "FALSE") 
+```
+
+```{r race-cond-true, include=TRUE, results="asis"}
+ if (show_text=="TRUE") 
+   cat("An overall difference in Casper score by race was found ", "(F (",  
+       (race$stat.anova[[1]][1,"Df"]), ",",race$stat.anova[[1]][2,"Df"],")",
+      "=",round(race$stat.anova[[1]][1,"F value"],2),",","p=",formatC(race$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),",", "$omega$ = ", round(race$effectsize$Omega2,3),").")
+
+# race$posthoc.result
+# race$effectsize_inter
+```
+
+```{r race-cond-false, include=TRUE, results="asis"}
+ if (show_text=="FALSE") 
+   cat("No overall difference in Casper score by race was found ","(F","(",
+       (race$stat.anova[[1]][1,"Df"]),",",race$stat.anova[[1]][2,"Df"],")",
+      "=",round(race$stat.anova[[1]][1,"F value"],2),",","_p_=",formatC(race$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),").")
+```
+
+
+```{r race-dff-table, echo=FALSE, include=TRUE}
+race$summary[[2]] 
+```
+
+```{r echo=FALSE, include=TRUE, results="asis"}
+if (show_text=="TRUE" & is.na(race$posthoc.result)==FALSE){
+  cat("The table below shows subgroups that were significantly different and the associated effect size and its magnitude. Note that the effect size is a positive value when the subgroup in the first column is greater than the subgroup in the second column, and is a negative value when the subgroup in the second column is greater than the subgroup in the first.")
+  race$posthoc.result
+}
+```
+
+```{r echo=FALSE, include=TRUE, message=FALSE, fig.height=3, fig.width=9}
+race$histogram
+race$boxplot
+```
+
+
+
+## Gender 
+Survey question: **What is your gender?**
+
+```{r echo=FALSE, include=FALSE, message=FALSE}
+gender <- distribution_by_var3(df, "Gender", "Z.Score")
+  show_text <- ifelse(gender$stat.anova[[1]][1,"Pr(>F)"]<0.05, "TRUE", "FALSE") 
+```
+
+```{r gen-cond-true, include=TRUE, results="asis"}
+ if (show_text=="TRUE") 
+   cat("An overall difference in Casper score by gender was found ", "(F (",  
+       (gender$stat.anova[[1]][1,"Df"]), ",",gender$stat.anova[[1]][2,"Df"],")",
+      "=",round(gender$stat.anova[[1]][1,"F value"],2),",","_p_=",formatC(gender$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2), ",", "$omega$ = ", round(gender$effectsize$Omega2,3),").")
+# gender$posthoc.result
+# gender$effectsize_inter
+
+```
+
+```{r gen-cond-false, include=TRUE, results="asis"}
+ if (show_text=="FALSE") 
+   cat("No overall difference in Casper score by gender was found ","(F","(",
+       (gender$stat.anova[[1]][1,"Df"]),",",gender$stat.anova[[1]][2,"Df"],")",
+      "=",round(gender$stat.anova[[1]][1,"F value"],2),",","_p_=",formatC(gender$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),").")
+```
+
+```{r gender-dff-table, echo=FALSE, include=TRUE}
+gender$summary[[2]] 
+```
+
+```{r echo=FALSE, include=TRUE, results="asis"}
+if (show_text=="TRUE" & is.na(gender$posthoc.result)==FALSE){
+  cat("The table below shows significant subgroup differences:")
+  gender$posthoc.result
+}
+```
+
+```{r echo=FALSE, include=TRUE, message=FALSE, fig.height=2.5, fig.width=9}
+gender$histogram
+gender$boxplot
+```
+
+
+
+## Age
+```{r echo=FALSE, include=FALSE, message=FALSE}
+age <- distribution_by_var3(df, "Age", "Z.Score")
+  show_text <- ifelse(age$stat.anova[[1]][1,"Pr(>F)"]<0.05, "TRUE", "FALSE") 
+```
+
+```{r age-cond-true, include=TRUE, results="asis"}
+ if (show_text=="TRUE") 
+   cat("An overall difference in Casper score by age was found ", "(F (",  
+       (age$stat.anova[[1]][1,"Df"]), ",",age$stat.anova[[1]][2,"Df"],")",
+      "=",round(age$stat.anova[[1]][1,"F value"],2),",","_p_ =",formatC(age$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),",", "$omega$ = ", round(age$effectsize$Omega2,3),").")
+# age$posthoc.result
+# age$effectsize_inter
+
+```
+
+```{r age-cond-false, include=TRUE, results="asis"}
+ if (show_text=="FALSE") 
+   cat("No overall difference in Casper score by gender was found ","(F","(",
+       (age$stat.anova[[1]][1,"Df"]),",",age$stat.anova[[1]][2,"Df"],")",
+      "=",round(age$stat.anova[[1]][1,"F value"],2),",","_p_=",formatC(age$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),").")
+```
+
+```{r age-dff-table, echo=FALSE, include=TRUE}
+age$summary[[2]]
+```
+
+```{r echo=FALSE, include=TRUE, results="asis"}
+if (show_text=="TRUE" & is.na(age$posthoc.result)==FALSE){
+  cat("The table below shows significant subgroup differences:")
+  age$posthoc.result
+  }
+```
+
+```{r echo=FALSE, include=TRUE, message=FALSE, fig.height=2.5, fig.width=7}
+age$histogram
+age$boxplot
+```
+
+
+
+## Language Spoken at Home
+Survey question: **What language do you speak most often at home?**
+
+```{r echo=FALSE, include=FALSE}
+homlang <- distribution_by_var3(df, "Home.Language", "Z.Score")
+  show_text <- ifelse(homlang$stat.anova[[1]][1,"Pr(>F)"]<0.05, "TRUE", "FALSE") 
+```
+
+```{r homlang-cond-true, include=TRUE, results="asis"}
+ if (show_text=="TRUE") 
+   cat("An overall difference in Casper score by Language spoken at home was found ", "(F (",  
+       (homlang$stat.anova[[1]][1,"Df"]), ",",homlang$stat.anova[[1]][2,"Df"],")",
+      "=",round(homlang$stat.anova[[1]][1,"F value"],2),",","p=",formatC(homlang$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),",", "$omega$ = ", round(homlang$effectsize$Omega2,3),").")
+# homlang$posthoc.result
+# homlang$effectsize_inter
+```
+
+```{r homlang-cond-false, include=TRUE, results="asis"}
+ if (show_text=="FALSE") 
+   cat("There was no difference in Casper score by language spoken at home ","(F","(",
+       (homlang$stat.anova[[1]][1,"Df"]),",",homlang$stat.anova[[1]][2,"Df"],")",
+      "=",round(homlang$stat.anova[[1]][1,"F value"],2),",","p=",formatC(homlang$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),").")
+```
+
+```{r homlang-dff-table, echo=FALSE, include=TRUE}
+homlang$summary[[2]]
+```
+
+```{r echo=FALSE, include=TRUE, results="asis"}
+if (show_text=="TRUE" & is.na(homlang$posthoc.result)==FALSE){
+  cat("The table below shows significant subgroup differences:")
+  homlang$posthoc.result
+  }
+```
+
+```{r echo=FALSE, include=TRUE, message=FALSE, fig.height=2.5, fig.width=8}
+homlang$histogram
+homlang$boxplot
+```
+
+
+
+## Community size
+
+Survey question: **What is the size of the community in which you grew up?**
+<br/>
+Remote/isolated (population < 1,000) 
+<br/>
+
+Rural (population between 1,000 and 9,999) 
+<br/>
+
+Small town/city (population between 10,000 and 49,999) 
+<br/>
+
+Medium town/city (population between 50,000 and 99,999)
+<br/>
+
+Large town/city (population between 100,000 and 1,000,000)
+<br/>
+
+Major urban center (population > 1,000,000)
+<br/>
+```{r echo=FALSE, include=FALSE, message=FALSE}
+comsize <- distribution_by_var3(df, "Community.Size", "Z.Score")
+  show_text <- ifelse(comsize$stat.anova[[1]][1,"Pr(>F)"]<0.05, "TRUE", "FALSE") 
+```
+
+```{r comsize-cond-true, include=TRUE, results="asis"}
+ if (show_text=="TRUE") 
+   cat("An overall difference in Casper score by community size was found ", "(F (",  
+       (comsize$stat.anova[[1]][1,"Df"]), ",",comsize$stat.anova[[1]][2,"Df"],")",
+      "=",round(comsize$stat.anova[[1]][1,"F value"],2),",","p=",formatC(comsize$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),",", "$omega$ = ", round(comsize$effectsize$Omega2,3),").")
+# comsize$posthoc.result
+# comsize$effectsize_inter
+```
+
+```{r comsize-cond-false, include=TRUE, results="asis"}
+ if (show_text=="FALSE") 
+   cat("No  difference in Casper score by community size was found ","(F","(",
+       (comsize$stat.anova[[1]][1,"Df"]),",",comsize$stat.anova[[1]][2,"Df"],")",
+      "=",round(comsize$stat.anova[[1]][1,"F value"],2),",","p=",formatC(comsize$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),").")
+```
+
+```{r comsize-dff-table, echo=FALSE, include=TRUE}
+comsize$summary[[2]]
+```
+
+```{r echo=FALSE, include=TRUE, results="asis"}
+if (show_text=="TRUE" & is.na(comsize$posthoc.result)==FALSE){
+  cat("The table below shows significant subgroup differences:")
+  comsize$posthoc.result
+}
+```
+
+```{r echo=FALSE, include=TRUE, message=FALSE, fig.height=2, fig.width=8}
+comsize$histogram
+comsize$boxplot
+```
+
+
+
+## Household income level
+Survey question: **Regardless of dependency status, please indicate your parents' combined gross income for last year (in USD, a rough estimate is sufficient)**
+
+```{r echo=FALSE, include=FALSE}
+income <- distribution_by_var3(df, "Gross.Income", "Z.Score")
+  show_text <- ifelse(income$stat.anova[[1]][1,"Pr(>F)"]<0.05, "TRUE", "FALSE") 
+```
+
+```{r income-cond-true, include=TRUE, results="asis"}
+ if (show_text=="TRUE") 
+   cat("An overall difference in Casper score by household income was found ", "(F (",  
+       (income$stat.anova[[1]][1,"Df"]), ",",income$stat.anova[[1]][2,"Df"],")",
+      "=",round(income$stat.anova[[1]][1,"F value"],2),",","p=",formatC(income$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),",", "$omega$ = ", round(income$effectsize$Omega2,3),").")
+# income$posthoc.result
+# income$effectsize_inter
+```
+
+```{r income-cond-false, include=TRUE, results="asis"}
+ if (show_text=="FALSE") 
+   cat("There was no difference in Casper score by by household income ","(F","(",
+       (income$stat.anova[[1]][1,"Df"]),",",income$stat.anova[[1]][2,"Df"],")",
+      "=",round(income$stat.anova[[1]][1,"F value"],2),",","p=",formatC(income$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),").")
+```
+
+```{r income-dff-table, echo=FALSE, include=TRUE}
+income$summary[[2]]
+```
+
+```{r echo=FALSE, include=TRUE, results="asis"}
+if (show_text=="TRUE" & is.na(income$posthoc.result)==FALSE){
+  cat("The table below shows significant subgroup differences:")
+  income$posthoc.result
+}
+```
+
+```{r echo=FALSE, include=TRUE, message=FALSE, fig.height=3, fig.width=8}
+income$histogram
+income$boxplot
+```
+
+## Highest Education 
+Survey question: **What is the highest degree or level of school that you have completed?**
+
+```{r echo=FALSE, include=FALSE}
+eduself <- distribution_by_var3(df, "Highest.Education.Self", "Z.Score")
+  show_text <- ifelse(eduself$stat.anova[[1]][1,"Pr(>F)"]<0.05, "TRUE", "FALSE") 
+```
+
+```{r include=TRUE, results="asis"}
+ if (show_text=="TRUE") 
+   cat("An overall difference in Casper score by education was found ", "(F (",  
+       (eduself$stat.anova[[1]][1,"Df"]), ",",eduself$stat.anova[[1]][2,"Df"],")",
+      "=",round(eduself$stat.anova[[1]][1,"F value"],2),",","p=",formatC(eduself$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),",", "$omega$ = ", round(eduself$effectsize$Omega2,3),").")
+# eduself$posthoc.result
+# eduself$effectsize_inter
+```
+
+```{r include=TRUE, results="asis"}
+ if (show_text=="FALSE") 
+   cat("There was no difference in Casper score by education ","(F","(",
+       (eduself$stat.anova[[1]][1,"Df"]),",",eduself$stat.anova[[1]][2,"Df"],")",
+      "=",round(eduself$stat.anova[[1]][1,"F value"],2),",","p=",formatC(eduself$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),").")
+```
+
+```{r echo=FALSE, include=TRUE}
+eduself$summary[[2]]
+```
+
+```{r echo=FALSE, include=TRUE, results="asis"}
+if (show_text=="TRUE" & is.na(eduself$posthoc.result)==FALSE){
+  cat("The table below shows significant subgroup differences:")
+  eduself$posthoc.result
+}
+```
+
+```{r echo=FALSE, include=TRUE, message=FALSE, fig.height=3, fig.width=9}
+eduself$histogram
+eduself$boxplot
+```
+
+## Highest Education of Parents
+Survey question: **What is the highest degree or level of school either of your parents have completed?**
+
+```{r echo=FALSE, include=FALSE}
+edupar <- distribution_by_var3(df, "Highest.Education.Parents", "Z.Score")
+  show_text <- ifelse(edupar$stat.anova[[1]][1,"Pr(>F)"]<0.05, "TRUE", "FALSE") 
+```
+
+```{r edupar-cond-true, include=TRUE, results="asis"}
+ if (show_text=="TRUE") 
+   cat("An overall difference in Casper score by parents' education was found ", "(F (",  
+       (edupar$stat.anova[[1]][1,"Df"]), ",",edupar$stat.anova[[1]][2,"Df"],")",
+      "=",round(edupar$stat.anova[[1]][1,"F value"],2),",","p=",formatC(edupar$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),",", "$omega$ = ", round(edupar$effectsize$Omega2,3),").")
+# edupar$posthoc.result
+# edupar$effectsize_inter
+```
+
+```{r edupar-cond-false, include=TRUE, results="asis"}
+ if (show_text=="FALSE") 
+   cat("There was no difference in Casper score by parents' education ","(F","(",
+       (edupar$stat.anova[[1]][1,"Df"]),",",edupar$stat.anova[[1]][2,"Df"],")",
+      "=",round(edupar$stat.anova[[1]][1,"F value"],2),",","p=",formatC(edupar$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),").")
+```
+
+```{r edupar-dff-table, echo=FALSE, include=TRUE}
+edupar$summary[[2]]
+```
+
+```{r echo=FALSE, include=TRUE, results="asis"}
+if (show_text=="TRUE" & is.na(edupar$posthoc.result)==FALSE){
+  cat("The table below shows significant subgroup differences:")
+  edupar$posthoc.result
+}
+```
+
+```{r echo=FALSE, include=TRUE, message=FALSE, fig.height=3, fig.width=9}
+edupar$histogram
+edupar$boxplot
+```
+
+
+## Work Experience
+Survey question: **How many years of work experience do you have?**
+
+```{r echo=FALSE, include=FALSE}
+
+workex <- distribution_by_var3(df, "Work.Experience", "Z.Score")
+  show_text <- ifelse(workex$stat.anova[[1]][1,"Pr(>F)"]<0.05, "TRUE", "FALSE") 
+```
+
+```{r workex-cond-true, include=TRUE, results="asis"}
+ if (show_text=="TRUE") 
+   cat("An overall difference in Casper score by Work Experience was found ", "(F (",  
+       (workex$stat.anova[[1]][1,"Df"]), ",",workex$stat.anova[[1]][2,"Df"],")",
+      "=",round(workex$stat.anova[[1]][1,"F value"],2),",","_p_=",formatC(workex$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),",", "$omega$ = ", round(workex$effectsize$Omega2,3),").")
+
+# workex$posthoc.result
+# workex$effectsize_inter
+```
+
+```{r workex-cond-false, include=TRUE, results="asis"}
+ if (show_text=="FALSE") 
+   cat("No overall difference in Casper score by Work Experience was found ","(F","(",
+       (workex$stat.anova[[1]][1,"Df"]),",",workex$stat.anova[[1]][2,"Df"],")",
+      "=",round(workex$stat.anova[[1]][1,"F value"],2),",","_p_=",formatC(workex$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),").")
+```
+
+```{r workex-dff-table, echo=FALSE, include=TRUE}
+workex$summary[[2]]
+```
+
+```{r echo=FALSE, include=TRUE, results="asis"}
+if (show_text=="TRUE" & is.na(workex$posthoc.result)==FALSE){
+  cat("The table below shows significant subgroup differences:")
+  workex$posthoc.result
+}
+```
+
+```{r echo=FALSE, include=TRUE, message=FALSE, fig.height=3, fig.width=7}
+workex$histogram
+workex$boxplot
+```
+
+
+
+## Employment before 18
+Survey question: **Were you employed before the age of 18?**
+
+```{r echo=FALSE, include=FALSE}
+workex18 <- distribution_by_var3(df, "Employment.Before.18", "Z.Score")
+  show_text <- ifelse(workex18$stat.anova[[1]][1,"Pr(>F)"]<0.05, "TRUE", "FALSE") 
+```
+
+```{r workex18-cond-true, include=TRUE, results="asis"}
+ if (show_text=="TRUE") 
+   cat("An overall difference in Casper score by employment before 18 was found ", "(F (",  
+       (workex18$stat.anova[[1]][1,"Df"]), ",",workex18$stat.anova[[1]][2,"Df"],")",
+      "=",round(workex18$stat.anova[[1]][1,"F value"],2),",","_p_=",formatC(workex18$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),",", "$omega$ = ", round(workex18$effectsize$Omega2,3),").")
+
+# workex18$posthoc.result
+# workex18$effectsize_inter
+```
+
+```{r workex18-cond-false, include=TRUE, results="asis"}
+ if (show_text=="FALSE") 
+   cat("No overall difference in Casper score by employment before 18 was found ","(F","(",
+       (workex18$stat.anova[[1]][1,"Df"]),",",workex18$stat.anova[[1]][2,"Df"],")",
+      "=",round(workex18$stat.anova[[1]][1,"F value"],2),",","_p_=",formatC(workex18$stat.anova[[1]][1,"Pr(>F)"], format = "e", digits = 2),").")
+```
+
+```{r workex18-dff-table, echo=FALSE, include=TRUE}
+workex18$summary[[2]]
+```
+
+```{r echo=FALSE, include=TRUE, results="asis"}
+if (show_text=="TRUE" & is.na(workex$posthoc.result)==FALSE){
+  cat("The table below shows significant subgroup differences:")
+  workex18$posthoc.result
+}
+```
+
+```{r echo=FALSE, include=TRUE, message=FALSE, fig.height=2, fig.width=7}
+workex18$histogram
+workex18$boxplot
+```
+
+
+
+## Program applicants compared to applicants who applied elsewhere
+```{r echo=FALSE, include=FALSE}
+
+# looker/demographic look. (See my folder on Looker for an example)
+df2 = read.csv(paste(fileLoc, filename2, sep="/"), header = TRUE,na.strings = c("-", "", "NA", "N/A"))
+df2 = df2[!duplicated(df2[,c('Reservation.ID', 'Z.Score')]),] 
+
+## Apply engineered vars to newly loaded table to match df
+# isolate rows of people who did not participate in exit survey (indicated by Other in gender, race, language and who 
+# also have na in community size, gross income and parent's edu)
+df2$blank <- df2$Gender=="Not Answered" & df2$Race=="Not Answered" & df2$Home.Language=="Not Answered" &
+  is.na(df2$Community.Size) & is.na(df2$Gross.Income) & is.na(df2$Highest.Education.Parents) &
+  is.na(df2$Work.Experience)
+
+df2 <- anti_join(df2, df, by = "Reservation.ID") # removes program data from cohort data
+
+## Number of program distributions:
+distcat <- "1"
+distcat[df2$Number.of.Distributions==1] <- "1"
+distcat[1<df2$Number.of.Distributions & df2$Number.of.Distributions<=5] <- "2-5"
+distcat[5<df2$Number.of.Distributions] <- "Over 5"
+
+df2$Distributions = distcat
+df2$Distributions <- as.factor(df2$Distributions)
+df2$Distributions<-ordered(df2$Distributions, levels = c("1", "2-5", "Over 5"))
+
+
+# Distinguish df from df2 before merging
+df2$Applied.to.Program <- "No"
+df$Applied.to.Program <- "Yes"
+#merge
+df3 <- rbind(df,df2)
+df3$Applied.to.Program <- as.factor(df3$Applied.to.Program)
+
+# program vs cohort
+progvcoh <- distribution_by_var(df3, "Applied.to.Program", "Z.Score")
+  show_text <- ifelse(progvcoh$stat.ttest[["p.value"]]<0.05, "TRUE", "FALSE") 
+```
+
+```{r progvcoh-cond-true, include=TRUE, results="asis"}
+ if (show_text=="TRUE") 
+   cat("An overall difference in Casper score was found between applicants who applied to the current program and applicants who applied elsewhere ", "(t (", round(progvcoh$stat.ttest$parameter,2),") =",round(progvcoh$stat.ttest$statistic,2),",","p=",formatC(progvcoh$stat.ttest[["p.value"]], format = "e", digits = 2),", cohen's _d_ =", abs(round(progvcoh$effectsize[[1]][[2]],2)),").")
+# progvcoh$effectsize.inter
+# progvcoh$stat.ttest
+```
+
+```{r progvcoh-cond-false, include=TRUE, results="asis"}
+ if (show_text=="FALSE") 
+   cat("No overall difference in Casper score was found between applicants to the current program and remaining cohort applicants","(t (",round(progvcoh$stat.ttest$parameter,2),") =",round(progvcoh$stat.ttest$statistic,2),",","p=", formatC(progvcoh$stat.ttest[["p.value"]], format = "e", digits = 2),").")
+```
+
+```{r progvcoh-dff-table, echo=FALSE, include=TRUE}
+progvcoh$summary[[2]]
+```
+
+```{r echo=FALSE, include=TRUE, message=FALSE, fig.height=2, fig.width=6}
+progvcoh$boxplot
+```
+
+
+# Notes
+
+Unless otherwise indicated, statistical testing for demographics with two subgroups was conducted using t-tests and for demographics with more than two subgroups with an analysis of variance with subgroup differences examined using Bonferroni-corrected pairwise t-tests. Alpha level was set at 0.05.
+
+Note on reading the boxplots: boxplots are a standardized and useful way of displaying how data points are distributed. The end of the left line on a boxplot indicates the minimum or lowest datapoint. The left edge of the box indicates the 25th percentile, the middle line of a plot (where the box is thinnest) represents the median value and the right edge of the box indicates the 75th percentile. The end of the line to the right of the box indicates the maximum or highest datapoint in that group. The span of the box indicates the area where 50% of samples lie. The notches around the midline (median) of a box indicate the confidence interval around the median and is roughly used to compare the medians of two boxes. When the notches of two boxes do not overlap, it is usually used as a quick visual estimate for the existence of a difference between datapoints in the two boxes.
+
